@@ -2970,6 +2970,11 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	oauth2IssuanceHandler.RegisterRoutes(s.Router)
 	oauth2SessionsHandler.RegisterRoutes(s.Router, middlewares...)
 	oauth2ConsentHandler.RegisterRoutes(s.Router, middlewares...)
+	apiGatewayHandler, apiGatewayErr := handlers.NewAPIGatewayHandler(s.Ctx, s.Config.ConfigStore)
+	if apiGatewayErr != nil {
+		return fmt.Errorf("initialize application API gateway: %w", apiGatewayErr)
+	}
+	apiGatewayHandler.RegisterRoutes(s.Router, middlewares...)
 	healthHandler.RegisterRoutes(s.Router, middlewares...)
 	providerHandler.RegisterRoutes(s.Router, middlewares...)
 	mcpHandler.RegisterRoutes(s.Router, middlewares...)

@@ -566,6 +566,73 @@
     }
   ],
   "item": [
+  {
+    "name": "Application API gateway",
+    "item": [
+      {
+        "name": "Application API gateway unmatched route GET [EXPECT-404]",
+        "request": {
+          "method": "GET",
+          "url": {
+            "raw": "{{baseUrl}}/api/v2/__bifrost_missing_api_route__",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v2",
+              "__bifrost_missing_api_route__"
+            ]
+          }
+        },
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Unconfigured application route returns 404 rather than the dashboard', function () {",
+                "  pm.expect(pm.response.code, pm.response.text()).to.equal(404);",
+                "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/plain');",
+                "});"
+              ]
+            }
+          }
+        ]
+      },
+      {
+        "name": "Application API gateway unmatched route POST [EXPECT-404]",
+        "request": {
+          "method": "POST",
+          "url": {
+            "raw": "{{baseUrl}}/api/v2/__bifrost_missing_api_route__",
+            "host": [
+              "{{baseUrl}}"
+            ],
+            "path": [
+              "api",
+              "v2",
+              "__bifrost_missing_api_route__"
+            ]
+          }
+        },
+        "event": [
+          {
+            "listen": "test",
+            "script": {
+              "type": "text/javascript",
+              "exec": [
+                "pm.test('Unconfigured application route returns 404 rather than the dashboard', function () {",
+                "  pm.expect(pm.response.code, pm.response.text()).to.equal(404);",
+                "  pm.expect(pm.response.headers.get('Content-Type')).to.include('text/plain');",
+                "});"
+              ]
+            }
+          }
+        ]
+      }
+    ]
+  },
     {
       "name": "1. Native Bifrost API",
       "description": "Bifrost's own OpenAI-shaped surface. Use a `provider/model` string in the `model` field to route to any configured backend.",

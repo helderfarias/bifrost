@@ -730,6 +730,13 @@ export default function AppSidebar() {
 				],
 			},
 			{
+				title: "APIs",
+				url: "/workspace/apis",
+				icon: Network,
+				description: "Application API gateway",
+				hasAccess: hasRoutingRulesAccess,
+			},
+			{
 				title: "Models",
 				url: "/workspace/providers",
 				icon: BoxIcon,
