@@ -5,6 +5,7 @@ export { baseApi, clearAuthStorage, getErrorCode, getErrorMessage, setAuthToken 
 export * from "./agentLogsApi";
 export * from "./agentsApi";
 export * from "./apiGatewayApi";
+export * from "./auditLogsApi";
 export * from "./brandingApi";
 export * from "./configApi";
 export * from "./featureFlagsApi";

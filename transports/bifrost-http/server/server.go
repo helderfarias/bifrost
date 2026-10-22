@@ -2969,6 +2969,7 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	oauth2DiscoveryHandler.RegisterRoutes(s.Router, middlewares...)
 	apiGatewayStore, _ := s.Config.ConfigStore.(configstore.APIGatewayRouteStore)
 	identityStore, _ := s.Config.ConfigStore.(configstore.IdentityStore)
+	auditLogStore, _ := s.Config.ConfigStore.(configstore.AuditLogStore)
 	// No middleware needed for mcp issuance routes, they should be open
 	oauth2IssuanceHandler.RegisterRoutes(s.Router)
 	oauth2SessionsHandler.RegisterRoutes(s.Router, middlewares...)
@@ -2976,6 +2977,7 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	healthHandler.RegisterRoutes(s.Router, middlewares...)
 	providerHandler.RegisterRoutes(s.Router, middlewares...)
 	handlers.NewAPIGatewayRoutesHandler(apiGatewayStore, s.APIGatewayHandler).RegisterRoutes(s.Router, middlewares...)
+	handlers.NewAuditLogsHandler(auditLogStore).RegisterRoutes(s.Router, middlewares...)
 	// Identity management is optional, preserving compatibility with config stores that do not implement it.
 	// When available, its routes participate in the same dashboard middleware chain as the other admin APIs.
 	handlers.NewIdentityHandler(identityStore).RegisterRoutes(s.Router, middlewares...)
@@ -3513,6 +3515,11 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 			// every request through.
 			apiMiddlewares = append(apiMiddlewares, s.AuthMiddleware.SetupLockMiddleware(), s.AuthMiddleware.APIMiddleware())
 			s.setupLockInstalled = true
+		}
+		// Audit only authenticated management mutations. It never wraps inference
+		// routes, keeping the common LLM request path allocation-free.
+		if auditStore, ok := s.Config.ConfigStore.(configstore.AuditLogStore); ok {
+			apiMiddlewares = append(apiMiddlewares, handlers.AuditMiddleware(auditStore))
 		}
 	}
 	// Add semantic cache plugin embedding request executor if it exists
