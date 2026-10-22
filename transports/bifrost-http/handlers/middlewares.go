@@ -1335,6 +1335,7 @@ type AuthMiddleware struct {
 	wsTicketStore     *WSTicketStore
 	tempTokensService *temptoken.Service // optional; when nil, temp-token fallback is disabled
 	tempTokensEnabled atomic.Bool
+	keycloakOIDC      bool
 	// bootstrapToken gates creation of the very first admin account. It is sourced
 	// from operator config (config.json setup_token or the BIFROST_SETUP_TOKEN env
 	// var) — never generated in-memory — so every node in a multi-node deployment
@@ -1366,6 +1367,7 @@ func InitAuthMiddleware(store configstore.ConfigStore, wsTicketStore *WSTicketSt
 		authConfig:        atomic.Pointer[configstore.AuthConfig]{},
 		wsTicketStore:     wsTicketStore,
 		tempTokensService: tempTokensService,
+		keycloakOIDC:      keycloakOIDCConfigFromEnvironment() != nil,
 	}
 
 	am.authConfig.Store(authConfig)
@@ -1672,6 +1674,8 @@ func (m *AuthMiddleware) InferenceMiddleware() schemas.BifrostHTTPMiddleware {
 var apiSystemWhitelistedRoutes = []string{
 	"/api/session/is-auth-enabled",
 	"/api/session/login",
+	"/api/session/oidc/login",
+	"/api/session/oidc/callback",
 	// Idempotent: the handler clears the cookie and returns 200 whether or
 	// not a session token is present, so a repeat logout must not 401 here.
 	"/api/session/logout",
@@ -1825,7 +1829,7 @@ func (m *AuthMiddleware) validSetupSession(value string, now time.Time) bool {
 // IsDashboardAuthActive reports whether an admin account exists and dashboard auth is on.
 func (m *AuthMiddleware) IsDashboardAuthActive() bool {
 	authConfig := m.authConfig.Load()
-	return authConfig != nil && authConfig.IsEnabled
+	return m.keycloakOIDC || authConfig != nil && authConfig.IsEnabled
 }
 
 // HasSetupToken reports whether the operator configured a setup token.
@@ -1916,7 +1920,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 			authConfig := m.authConfig.Load()
 			// Match the whitelist against the RAW request path (PathOriginal); see the comment below.
 			url := string(ctx.Request.URI().PathOriginal())
-			if authConfig == nil || !authConfig.IsEnabled {
+			if (authConfig == nil || !authConfig.IsEnabled) && !m.keycloakOIDC {
 				// logger.Debug("auth middleware is disabled because auth config is not present or not enabled")
 				// The open management API is still not a cross-origin one: a browser
 				// page from an unlisted origin is refused, while whitelisted routes
@@ -2038,6 +2042,14 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 			}
 			// Checking basic auth for inference calls
 			if scheme == "Basic" {
+				if m.keycloakOIDC {
+					SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
+					return
+				}
+				if authConfig == nil || authConfig.AdminUserName == nil || authConfig.AdminPassword == nil {
+					SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
+					return
+				}
 				// Decode the base64 token
 				decodedBytes, err := base64.StdEncoding.DecodeString(token)
 				if err != nil {
@@ -2078,6 +2090,10 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 
 				// Verify the session
 				if !validateSession(ctx, m.store, token) {
+					if m.keycloakOIDC {
+						SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
+						return
+					}
 					// Here we will check if its the base64 of username:password
 					// This is for backward compatibility with the old auth system
 					decodedBytes, err := base64.StdEncoding.DecodeString(token)
@@ -2091,7 +2107,7 @@ func (m *AuthMiddleware) middleware(shouldSkip func(*configstore.AuthConfig, str
 						return
 					}
 					// Verify the username and password
-					if authConfig.AdminUserName == nil || username != authConfig.AdminUserName.GetValue() {
+					if authConfig == nil || authConfig.AdminUserName == nil || username != authConfig.AdminUserName.GetValue() {
 						SendError(ctx, fasthttp.StatusUnauthorized, "Unauthorized")
 						return
 					}

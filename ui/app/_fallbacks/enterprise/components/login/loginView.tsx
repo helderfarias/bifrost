@@ -2,8 +2,9 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useBranding } from "@/lib/hooks/useBranding";
-import { getErrorMessage, useLoginMutation } from "@/lib/store/apis";
+import { getErrorMessage, useIsAuthEnabledQuery, useLoginMutation } from "@/lib/store/apis";
 import { DEFAULT_POST_LOGIN_PATH, getLoginGotoFromSearch } from "@/lib/utils/loginGoto";
+import { getApiBaseUrl } from "@/lib/utils/port";
 import { BooksIcon, DiscordLogoIcon, GithubLogoIcon } from "@phosphor-icons/react";
 import { useNavigate } from "@tanstack/react-router";
 import { Eye, EyeOff } from "lucide-react";
@@ -39,6 +40,7 @@ export default function LoginView() {
 	const navigate = useNavigate();
 	const [isLoading, setIsLoading] = useState(false);
 	const [login, { isLoading: isLoggingIn }] = useLoginMutation();
+	const { data: authState } = useIsAuthEnabledQuery();
 
 	useEffect(() => {
 		setMounted(true);
@@ -60,6 +62,11 @@ export default function LoginView() {
 	};
 
 	const { logoSrc, logoAlt } = useBranding(mounted && resolvedTheme === "dark");
+	const keycloakEnabled = authState?.auth_type === "sso";
+	const keycloakLogin = () => {
+		const goto = getLoginGotoFromSearch(window.location.search) ?? DEFAULT_POST_LOGIN_PATH;
+		window.location.assign(`${getApiBaseUrl()}/session/oidc/login?goto=${encodeURIComponent(goto)}`);
+	};
 
 	return (
 		<div className="flex min-h-screen items-center justify-center p-4">
@@ -75,7 +82,10 @@ export default function LoginView() {
 						<p className="text-muted-foreground text-sm">Sign in to your account to continue</p>
 					</div>
 
-					<form onSubmit={handleSubmit} className="space-y-5">
+					{keycloakEnabled ? <div className="space-y-5">
+						<p className="text-muted-foreground text-center text-sm">Sign in with your Keycloak account to continue.</p>
+						<Button type="button" className="h-9 w-full text-sm" onClick={keycloakLogin}>Sign in with Keycloak</Button>
+					</div> : <form onSubmit={handleSubmit} className="space-y-5">
 						{errorMessage && <div className="bg-destructive/10 text-destructive rounded-sm p-3 text-sm">{errorMessage}</div>}
 
 						<div className="space-y-2">
@@ -123,7 +133,7 @@ export default function LoginView() {
 						<Button type="submit" className="h-9 w-full text-sm" isLoading={isLoading} disabled={isLoading}>
 							{isLoading || isLoggingIn ? "Signing in..." : "Sign in"}
 						</Button>
-					</form>
+					</form>}
 
 					{/* Social Links */}
 					<div className="flex items-center justify-center gap-4 pt-4">

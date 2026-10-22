@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"crypto/subtle"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +26,7 @@ type SessionHandler struct {
 	// when the gate is not installed (enterprise, or no config store), in which case
 	// is-auth-enabled never reports setup_required.
 	setupLock *AuthMiddleware
+	oidc      *keycloakOIDCConfig
 }
 
 // NewSessionHandler creates a new session handler instance
@@ -32,6 +34,7 @@ func NewSessionHandler(configStore configstore.ConfigStore, wsTicketStore *WSTic
 	return &SessionHandler{
 		configStore:   configStore,
 		wsTicketStore: wsTicketStore,
+		oidc:          keycloakOIDCConfigFromEnvironment(),
 	}
 }
 
@@ -97,6 +100,8 @@ func (h *SessionHandler) RegisterRoutes(r *router.Router, middlewares ...schemas
 	r.GET("/api/session/is-auth-enabled", lib.ChainMiddlewares(h.isAuthEnabled, middlewares...))
 	r.POST("/api/session/ws-ticket", lib.ChainMiddlewares(h.issueWSTicket, middlewares...))
 	r.POST("/api/session/setup", lib.ChainMiddlewares(h.startSetupSession, middlewares...))
+	r.GET("/api/session/oidc/login", lib.ChainMiddlewares(h.startOIDCLogin, middlewares...))
+	r.GET("/api/session/oidc/callback", lib.ChainMiddlewares(h.finishOIDCLogin, middlewares...))
 }
 
 // isAuthEnabled handles GET /api/session/is-auth-enabled - Check if auth is enabled
@@ -126,7 +131,7 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 		SendError(ctx, fasthttp.StatusInternalServerError, fmt.Sprintf("Failed to get auth config: %v", err))
 		return
 	}
-	if authConfig == nil {
+	if authConfig == nil && h.oidc == nil {
 		SendJSON(ctx, map[string]any{
 			"is_auth_enabled":         false,
 			"has_valid_token":         false,
@@ -152,14 +157,116 @@ func (h *SessionHandler) isAuthEnabled(ctx *fasthttp.RequestCtx) {
 			hasValidToken = true
 		}
 	}
+	passwordAuthEnabled := authConfig != nil && authConfig.IsEnabled
+	authEnabled := h.oidc != nil || passwordAuthEnabled
+	authType := dashboardAuthType(passwordAuthEnabled)
+	if h.oidc != nil {
+		authType = "sso"
+	}
 	SendJSON(ctx, map[string]any{
-		"is_auth_enabled":         authConfig.IsEnabled,
+		"is_auth_enabled":         authEnabled,
 		"has_valid_token":         hasValidToken,
-		"auth_type":               dashboardAuthType(authConfig.IsEnabled),
+		"auth_type":               authType,
 		"inference_auth_enforced": inferenceAuthEnforced,
 		"setup_required":          setupRequired,
 		"setup_token_configured":  setupTokenConfigured,
 	})
+}
+
+func (h *SessionHandler) startOIDCLogin(ctx *fasthttp.RequestCtx) {
+	if h.oidc == nil {
+		SendError(ctx, fasthttp.StatusNotFound, "Keycloak OIDC login is not configured")
+		return
+	}
+	state, err := newKeycloakOIDCState(string(ctx.QueryArgs().Peek("goto")))
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to start OIDC login")
+		return
+	}
+	encoded, err := encodeKeycloakOIDCState(state)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to start OIDC login")
+		return
+	}
+	setOIDCStateCookie(ctx, encoded, time.Now().Add(10*time.Minute))
+	ctx.Redirect(h.oidc.authorizationURL(state.State, state.Verifier), fasthttp.StatusFound)
+}
+
+func (h *SessionHandler) finishOIDCLogin(ctx *fasthttp.RequestCtx) {
+	if h.oidc == nil {
+		SendError(ctx, fasthttp.StatusNotFound, "Keycloak OIDC login is not configured")
+		return
+	}
+	state, err := decodeKeycloakOIDCState(string(ctx.Request.Header.Cookie(keycloakOIDCStateCookie)))
+	setOIDCStateCookie(ctx, "", time.Unix(1, 0))
+	if err != nil || subtle.ConstantTimeCompare([]byte(state.State), ctx.QueryArgs().Peek("state")) != 1 {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid OIDC login state")
+		return
+	}
+	code := string(ctx.QueryArgs().Peek("code"))
+	if code == "" {
+		SendError(ctx, fasthttp.StatusBadRequest, "missing OIDC authorization code")
+		return
+	}
+	token, err := h.oidc.exchangeCode(ctx, code, state.Verifier)
+	if err != nil {
+		logger.Warn("Keycloak OIDC code exchange failed: %v", err)
+		SendError(ctx, fasthttp.StatusUnauthorized, "Keycloak login failed")
+		return
+	}
+	if _, err := h.oidc.userInfo(ctx, token.AccessToken); err != nil {
+		logger.Warn("Keycloak OIDC userinfo failed: %v", err)
+		SendError(ctx, fasthttp.StatusUnauthorized, "Keycloak login failed")
+		return
+	}
+	expiresIn := time.Duration(token.ExpiresIn) * time.Second
+	if expiresIn <= 0 || expiresIn > 8*time.Hour {
+		expiresIn = 8 * time.Hour
+	}
+	if err := h.createBrowserSession(ctx, time.Now().Add(expiresIn)); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to create login session")
+		return
+	}
+	ctx.Redirect(state.Goto, fasthttp.StatusFound)
+}
+
+func (h *SessionHandler) createBrowserSession(ctx *fasthttp.RequestCtx, expiresAt time.Time) error {
+	token := uuid.NewString()
+	if err := h.configStore.CreateSession(ctx, &tables.SessionsTable{Token: token, ExpiresAt: expiresAt, CreatedAt: time.Now(), UpdatedAt: time.Now()}); err != nil {
+		return err
+	}
+	setSessionCookie(ctx, token, expiresAt)
+	return nil
+}
+
+func setSessionCookie(ctx *fasthttp.RequestCtx, value string, expiresAt time.Time) {
+	cookie := fasthttp.AcquireCookie()
+	defer fasthttp.ReleaseCookie(cookie)
+	cookie.SetKey("token")
+	cookie.SetValue(value)
+	cookie.SetExpire(expiresAt)
+	cookie.SetPath("/")
+	cookie.SetHTTPOnly(true)
+	cookie.SetSameSite(fasthttp.CookieSameSiteLaxMode)
+	if ctx.IsTLS() || string(ctx.Request.Header.Peek("X-Forwarded-Proto")) == "https" {
+		cookie.SetSecure(true)
+	}
+	ctx.Response.Header.SetCookie(cookie)
+}
+
+func setOIDCStateCookie(ctx *fasthttp.RequestCtx, value string, expiresAt time.Time) {
+	cookie := fasthttp.AcquireCookie()
+	defer fasthttp.ReleaseCookie(cookie)
+	cookie.SetKey(keycloakOIDCStateCookie)
+	cookie.SetValue(value)
+	cookie.SetExpire(expiresAt)
+	cookie.SetPath("/api/session/oidc")
+	cookie.SetHTTPOnly(true)
+	cookie.SetSameSite(fasthttp.CookieSameSiteLaxMode)
+	if ctx.IsTLS() || string(ctx.Request.Header.Peek("X-Forwarded-Proto")) == "https" {
+		cookie.SetSecure(true)
+	}
+	ctx.Response.Header.SetCookie(cookie)
 }
 
 // dashboardAuthType reports the dashboard session auth mode for frontend flows.
@@ -174,6 +281,10 @@ func dashboardAuthType(isEnabled bool) string {
 func (h *SessionHandler) login(ctx *fasthttp.RequestCtx) {
 	if h.configStore == nil {
 		SendError(ctx, fasthttp.StatusForbidden, "Authentication is not enabled")
+		return
+	}
+	if h.oidc != nil {
+		SendError(ctx, fasthttp.StatusForbidden, "Keycloak OIDC login is enabled")
 		return
 	}
 	payload := struct {

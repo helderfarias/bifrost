@@ -180,6 +180,8 @@ export const baseApi = createApi({
 		"OAuth2Config",
 		"RoutingRules",
 		"APIGatewayRoutes",
+		"IdentityUsers",
+		"IdentityRoles",
 		"PricingOverrides",
 		"MCPToolGroups",
 		"VirtualMCPs",

@@ -2968,6 +2968,7 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 
 	oauth2DiscoveryHandler.RegisterRoutes(s.Router, middlewares...)
 	apiGatewayStore, _ := s.Config.ConfigStore.(configstore.APIGatewayRouteStore)
+	identityStore, _ := s.Config.ConfigStore.(configstore.IdentityStore)
 	// No middleware needed for mcp issuance routes, they should be open
 	oauth2IssuanceHandler.RegisterRoutes(s.Router)
 	oauth2SessionsHandler.RegisterRoutes(s.Router, middlewares...)
@@ -2975,6 +2976,18 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	healthHandler.RegisterRoutes(s.Router, middlewares...)
 	providerHandler.RegisterRoutes(s.Router, middlewares...)
 	handlers.NewAPIGatewayRoutesHandler(apiGatewayStore, s.APIGatewayHandler).RegisterRoutes(s.Router, middlewares...)
+	// Identity management is optional, preserving compatibility with config stores that do not implement it.
+	handlers.NewIdentityHandler(identityStore).RegisterRoutes(s.Router, middlewares...)
+	if identityStore != nil {
+		syncCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
+		created, updated, configured, syncErr := handlers.SyncKeycloakUsersFromEnvironment(syncCtx, identityStore)
+		cancel()
+		if syncErr != nil {
+			logger.Warn("initial Keycloak user sync failed: %v", syncErr)
+		} else if configured {
+			logger.Info("initial Keycloak user sync completed: created=%d updated=%d", created, updated)
+		}
+	}
 	mcpHandler.RegisterRoutes(s.Router, middlewares...)
 	if virtualMCPHandler != nil {
 		virtualMCPHandler.RegisterRoutes(s.Router, middlewares...)

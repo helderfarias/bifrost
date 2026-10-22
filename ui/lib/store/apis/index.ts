@@ -8,6 +8,7 @@ export * from "./apiGatewayApi";
 export * from "./brandingApi";
 export * from "./configApi";
 export * from "./featureFlagsApi";
+export * from "./identityApi";
 export * from "./devApi";
 export * from "./governanceApi";
 export * from "./logsApi";

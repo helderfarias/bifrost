@@ -572,6 +572,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_rss_feeds_icon_url_column"}, run: migrationAddRSSFeedsIconURLColumn},
 	{IDs: []string{"add_api_gateway_routes_table"}, run: migrationAddAPIGatewayRoutesTable},
 	{IDs: []string{"add_api_gateway_route_virtual_key_ids_column"}, run: migrationAddAPIGatewayRouteVirtualKeyIDsColumn},
+	{IDs: []string{"add_identity_rbac_tables"}, run: migrationAddIdentityRBACTables},
 }
 
 // warpLogEmbeddingColumns are the semantic-search configuration columns added
@@ -1153,6 +1154,34 @@ func migrationAddAPIGatewayRouteVirtualKeyIDsColumn(ctx context.Context, db *gor
 		},
 		Rollback: func(*gorm.DB) error {
 			return fmt.Errorf("%s is non-rollbackable: removing virtual-key access rules could expose configured APIs", migrationName)
+		},
+	})
+}
+
+func migrationAddIdentityRBACTables(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	const migrationName = "add_identity_rbac_tables"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	return RunSingleMigration(ctx, nil, db, logger, &migrator.Migration{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			if err := tx.WithContext(ctx).AutoMigrate(&tables.TableIdentityUser{}, &tables.TableIdentityRole{}, &tables.TableIdentityUserRole{}); err != nil {
+				return err
+			}
+			roles := []tables.TableIdentityRole{
+				{ID: "role-admin", Name: "Admin", Description: "Full administration access", ExternalRole: "bifrost-admin", PermissionsJSON: `["*"]`, IsSystem: true},
+				{ID: "role-developer", Name: "Developer", Description: "Can manage APIs, virtual keys and projects", ExternalRole: "bifrost-developer", PermissionsJSON: `["api_gateway:read","api_gateway:write","virtual_keys:read","virtual_keys:write","projects:read","projects:write"]`, IsSystem: true},
+				{ID: "role-viewer", Name: "Viewer", Description: "Read-only access", ExternalRole: "bifrost-viewer", PermissionsJSON: `["api_gateway:read","virtual_keys:read","projects:read","users:read","roles:read"]`, IsSystem: true},
+			}
+			for _, role := range roles {
+				if err := tx.WithContext(ctx).Where("id = ?", role.ID).FirstOrCreate(&role).Error; err != nil {
+					return err
+				}
+			}
+			return nil
+		},
+		Rollback: func(*gorm.DB) error {
+			return fmt.Errorf("%s is non-rollbackable: dropping identity data would remove users and authorization assignments", migrationName)
 		},
 	})
 }
