@@ -79,6 +79,7 @@ type keycloakUser struct {
 }
 
 type keycloakRole struct {
+	ID   string `json:"id"`
 	Name string `json:"name"`
 }
 
@@ -203,6 +204,124 @@ func (s *keycloakSyncer) userRealmRoles(ctx context.Context, token, userID strin
 		result = append(result, role.Name)
 	}
 	return result, nil
+}
+
+// provisionUser creates a Keycloak account with a one-time password. The
+// password is sent only to Keycloak's Admin API; callers never persist it in
+// Bifrost or include it in audit fields, logs, or API responses.
+func (s *keycloakSyncer) provisionUser(ctx context.Context, user tables.TableIdentityUser, password string, externalRoles []string) (keycloakUser, error) {
+	token, err := s.accessToken(ctx)
+	if err != nil {
+		return keycloakUser{}, err
+	}
+	firstName, lastName := keycloakNameParts(user.Name)
+	payload := map[string]any{
+		"username": user.Username, "email": user.Email, "firstName": firstName, "lastName": lastName,
+		"enabled": user.IsActive, "credentials": []map[string]any{{"type": "password", "value": password, "temporary": true}},
+		"requiredActions": []string{"UPDATE_PASSWORD"},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return keycloakUser{}, err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint("admin/realms", s.realm, "users"), strings.NewReader(string(body)))
+	if err != nil {
+		return keycloakUser{}, err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := s.httpClient.Do(request)
+	if err != nil {
+		return keycloakUser{}, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusCreated {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
+		return keycloakUser{}, fmt.Errorf("Keycloak returned HTTP %d", response.StatusCode)
+	}
+	location, err := url.Parse(response.Header.Get("Location"))
+	if err != nil || location.Path == "" {
+		return keycloakUser{}, fmt.Errorf("Keycloak create-user response did not include a user location")
+	}
+	createdID := path.Base(location.Path)
+	if createdID == "." || createdID == "/" || createdID == "" {
+		return keycloakUser{}, fmt.Errorf("Keycloak create-user response contained an invalid user location")
+	}
+	if err := s.assignRealmRoles(ctx, token, createdID, externalRoles); err != nil {
+		_ = s.deleteUser(ctx, token, createdID)
+		return keycloakUser{}, err
+	}
+	return keycloakUser{ID: createdID, Username: user.Username, Email: user.Email, FirstName: firstName, LastName: lastName, Enabled: user.IsActive}, nil
+}
+
+func (s *keycloakSyncer) assignRealmRoles(ctx context.Context, token, userID string, roleNames []string) error {
+	roles := make([]keycloakRole, 0, len(roleNames))
+	for _, name := range roleNames {
+		request, err := http.NewRequestWithContext(ctx, http.MethodGet, s.endpoint("admin/realms", s.realm, "roles", name), nil)
+		if err != nil {
+			return err
+		}
+		request.Header.Set("Authorization", "Bearer "+token)
+		var role keycloakRole
+		if err := s.doJSON(request, &role); err != nil {
+			return err
+		}
+		if role.ID == "" || role.Name == "" {
+			return fmt.Errorf("Keycloak role %q is invalid", name)
+		}
+		roles = append(roles, role)
+	}
+	if len(roles) == 0 {
+		return nil
+	}
+	body, err := json.Marshal(roles)
+	if err != nil {
+		return err
+	}
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, s.endpoint("admin/realms", s.realm, "users", userID, "role-mappings/realm"), strings.NewReader(string(body)))
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := s.httpClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		_, _ = io.Copy(io.Discard, io.LimitReader(response.Body, 4<<10))
+		return fmt.Errorf("Keycloak returned HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
+func (s *keycloakSyncer) deleteUser(ctx context.Context, token, userID string) error {
+	request, err := http.NewRequestWithContext(ctx, http.MethodDelete, s.endpoint("admin/realms", s.realm, "users", userID), nil)
+	if err != nil {
+		return err
+	}
+	request.Header.Set("Authorization", "Bearer "+token)
+	response, err := s.httpClient.Do(request)
+	if err != nil {
+		return err
+	}
+	defer response.Body.Close()
+	if response.StatusCode < 200 || response.StatusCode >= 300 {
+		return fmt.Errorf("Keycloak returned HTTP %d", response.StatusCode)
+	}
+	return nil
+}
+
+func keycloakNameParts(name string) (string, string) {
+	parts := strings.Fields(name)
+	if len(parts) == 0 {
+		return "", ""
+	}
+	if len(parts) == 1 {
+		return parts[0], ""
+	}
+	return parts[0], strings.Join(parts[1:], " ")
 }
 
 func (s *keycloakSyncer) endpoint(parts ...string) string {

@@ -1314,6 +1314,7 @@ func TestUpdateRateLimitPreservesRuntimeCounters(t *testing.T) {
 func TestGetVirtualKeysPaginated_AssignmentFilters(t *testing.T) {
 	store := setupRDBTestStore(t)
 	ctx := context.Background()
+	require.NoError(t, store.DB().AutoMigrate(&tables.TableIdentityVirtualKeyAssignment{}))
 
 	require.NoError(t, store.CreateCustomer(ctx, &tables.TableCustomer{ID: "cust-1", Name: "Customer One"}))
 	require.NoError(t, store.CreateTeam(ctx, &tables.TableTeam{ID: "team-1", Name: "Team One"}))

@@ -573,6 +573,7 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_api_gateway_routes_table"}, run: migrationAddAPIGatewayRoutesTable},
 	{IDs: []string{"add_api_gateway_route_virtual_key_ids_column"}, run: migrationAddAPIGatewayRouteVirtualKeyIDsColumn},
 	{IDs: []string{"add_identity_rbac_tables"}, run: migrationAddIdentityRBACTables},
+	{IDs: []string{"add_identity_virtual_key_assignments"}, run: migrationAddIdentityVirtualKeyAssignments},
 	{IDs: []string{"add_audit_logs_table"}, run: migrationAddAuditLogsTable},
 }
 
@@ -1183,6 +1184,21 @@ func migrationAddIdentityRBACTables(ctx context.Context, db *gorm.DB, logger sch
 		},
 		Rollback: func(*gorm.DB) error {
 			return fmt.Errorf("%s is non-rollbackable: dropping identity data would remove users and authorization assignments", migrationName)
+		},
+	})
+}
+
+func migrationAddIdentityVirtualKeyAssignments(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	const migrationName = "add_identity_virtual_key_assignments"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	return RunSingleMigration(ctx, nil, db, logger, &migrator.Migration{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&tables.TableIdentityVirtualKeyAssignment{})
+		},
+		Rollback: func(*gorm.DB) error {
+			return fmt.Errorf("%s is non-rollbackable: dropping assignments would lose virtual key ownership history", migrationName)
 		},
 	})
 }

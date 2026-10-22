@@ -4129,11 +4129,9 @@ func (s *RDBConfigStore) getVirtualKeysWindow(ctx context.Context, db *gorm.DB, 
 	// Build base query with filters
 	baseQuery := db.Model(&tables.TableVirtualKey{})
 
-	// A virtual key is assigned to at most one of customer / team / user, so
-	// combining assignment filters ORs them rather than narrowing to nothing.
-	// UserID has no meaning in the OSS build (the VK↔user link lives in an
-	// enterprise table), so it fails closed instead of silently widening the
-	// result set; the enterprise store overrides this method to honour it.
+	// A virtual key may be governed by a team/customer and have one personal
+	// assignee. Assignment filters intentionally OR together so the list matches
+	// any selected governance dimension.
 	var assignmentClauses []string
 	var assignmentArgs []interface{}
 	if params.CustomerID != "" {
@@ -4149,7 +4147,11 @@ func (s *RDBConfigStore) getVirtualKeysWindow(ctx context.Context, db *gorm.DB, 
 		assignmentArgs = append(assignmentArgs, params.BusinessUnitID)
 	}
 	if params.UserID != "" {
-		assignmentClauses = append(assignmentClauses, "1 = 0")
+		assignedKeyIDs := db.Model(&tables.TableIdentityVirtualKeyAssignment{}).
+			Select("virtual_key_id").
+			Where("user_id = ?", params.UserID)
+		assignmentClauses = append(assignmentClauses, "governance_virtual_keys.id IN (?)")
+		assignmentArgs = append(assignmentArgs, assignedKeyIDs)
 	}
 	if len(assignmentClauses) > 0 {
 		baseQuery = baseQuery.Where("("+strings.Join(assignmentClauses, " OR ")+")", assignmentArgs...)

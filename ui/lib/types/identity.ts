@@ -7,6 +7,7 @@ export type IdentityUser = {
 	source: string;
 	is_active: boolean;
 	role_ids: string[];
+	virtual_key_id?: string | null;
 };
 
 export type IdentityRole = {
@@ -19,4 +20,5 @@ export type IdentityRole = {
 };
 
 export type IdentityUserInput = Omit<IdentityUser, "id">;
+export type KeycloakProvisionUserInput = IdentityUserInput & { temporary_password: string };
 export type IdentityRoleInput = Omit<IdentityRole, "id" | "is_system">;

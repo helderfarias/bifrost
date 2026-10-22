@@ -281,8 +281,8 @@ type GovernanceHandler struct {
 	// access-profile-managed VKs). Injected at construction; nil on OSS builds.
 	externalQuotaBudgetResolver ExternalQuotaBudgetResolver
 	// virtualKeyAssigneeResolver, when non-nil, supplies the user each VK is
-	// assigned to (enterprise: the enterprise_virtual_key_users link). Injected at
-	// construction; nil on OSS builds, which have no user directory.
+	// assigned to. Community identity storage uses the one-to-one
+	// identity_virtual_key_assignments link; downstream editions may replace it.
 	virtualKeyAssigneeResolver VirtualKeyAssigneeResolver
 	// virtualKeyBusinessUnitResolver, when non-nil, names each VK's owning business unit.
 	// Injected at construction; nil on OSS builds, which have no business unit table.

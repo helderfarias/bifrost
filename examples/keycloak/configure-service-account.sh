@@ -15,7 +15,9 @@ client_id="$($KCADM get clients -r "$KEYCLOAK_REALM" -q "clientId=$BIFROST_CLIEN
 realm_management_id="$($KCADM get clients -r "$KEYCLOAK_REALM" -q "clientId=realm-management" --fields id --format csv --noquotes)"
 service_account_id="$($KCADM get "clients/$client_id/service-account-user" -r "$KEYCLOAK_REALM" --fields id --format csv --noquotes)"
 
-for role in view-users view-realm query-groups; do
+# User provisioning needs manage-users; the other roles are the least
+# privilege required for directory and realm-role reads during synchronization.
+for role in view-users manage-users view-realm query-groups; do
   role_id="$($KCADM get "clients/$realm_management_id/roles/$role" -r "$KEYCLOAK_REALM" --fields id --format csv --noquotes)"
   "$KCADM" create "users/$service_account_id/role-mappings/clients/$realm_management_id" \
     -r "$KEYCLOAK_REALM" \

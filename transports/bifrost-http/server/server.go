@@ -2861,6 +2861,14 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 		governancePluginName = name
 	}
 	governancePlugin, _ := lib.FindPluginAs[schemas.LLMPlugin](s.Config, governancePluginName)
+	// Community identity storage can resolve the one-to-one personal key owner in
+	// batches. Downstream editions may still supply their own resolver; preserve
+	// it when present.
+	if s.VirtualKeyAssigneeResolver == nil {
+		if assignments, ok := s.Config.ConfigStore.(configstore.IdentityVirtualKeyAssignmentStore); ok {
+			s.VirtualKeyAssigneeResolver = assignments.ResolveIdentityVirtualKeyAssignees
+		}
+	}
 	if governancePlugin != nil {
 		governanceHandler, err = handlers.NewGovernanceHandler(callbacks, s.Config.ConfigStore, govLogManager, s.ExternalQuotaBudgetResolver, s.VirtualKeyAssigneeResolver, s.VirtualKeyBusinessUnitResolver)
 		if err != nil {

@@ -144,7 +144,8 @@ export interface VirtualKey {
 	// Read-only, server-computed: the user this key is assigned to, or null when it
 	// is assigned to a team, a customer, or nothing. Absent (rather than null) when
 	// the response came from a path that does not resolve assignees, so callers can
-	// tell "unassigned" from "unknown". Always null in OSS, which has no users.
+	// tell "unassigned" from "unknown". Community resolves this from the
+	// one-to-one identity assignment when user governance is configured.
 	assigned_user?: { id: string; name: string; email: string } | null;
 	config_hash?: string; // Present when config is synced from config.json
 }

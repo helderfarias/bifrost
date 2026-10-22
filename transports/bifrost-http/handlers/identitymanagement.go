@@ -17,22 +17,27 @@ import (
 
 // IdentityHandler manages the Community user directory and RBAC catalogue.
 // OIDC sync writes through this same handler/store path, so dashboard-created
-// roles and externally synchronized identities have one source of truth.
+// roles, personal virtual-key assignments, and externally synchronized
+// identities have one source of truth.
 type IdentityHandler struct {
-	store    configstore.IdentityStore
-	keycloak *keycloakSyncer
+	store       configstore.IdentityStore
+	assignments configstore.IdentityVirtualKeyAssignmentStore
+	keycloak    *keycloakSyncer
 }
 
 func NewIdentityHandler(store configstore.IdentityStore) *IdentityHandler {
-	return &IdentityHandler{store: store, keycloak: newKeycloakSyncerFromEnvironment()}
+	assignments, _ := store.(configstore.IdentityVirtualKeyAssignmentStore)
+	return &IdentityHandler{store: store, assignments: assignments, keycloak: newKeycloakSyncerFromEnvironment()}
 }
 
 func (h *IdentityHandler) RegisterRoutes(r *router.Router, middlewares ...schemas.BifrostHTTPMiddleware) {
 	r.GET("/api/identity/users", lib.ChainMiddlewares(h.listUsers, middlewares...))
 	r.POST("/api/identity/users", lib.ChainMiddlewares(h.createUser, middlewares...))
+	r.POST("/api/identity/users/provision/keycloak", lib.ChainMiddlewares(h.provisionKeycloakUser, middlewares...))
 	r.PUT("/api/identity/users/{id}", lib.ChainMiddlewares(h.updateUser, middlewares...))
 	r.DELETE("/api/identity/users/{id}", lib.ChainMiddlewares(h.deleteUser, middlewares...))
 	r.PUT("/api/identity/users/{id}/roles", lib.ChainMiddlewares(h.replaceUserRoles, middlewares...))
+	r.PUT("/api/identity/users/{id}/virtual-key", lib.ChainMiddlewares(h.replaceUserVirtualKey, middlewares...))
 	r.POST("/api/identity/users/sync/keycloak", lib.ChainMiddlewares(h.syncKeycloakUsers, middlewares...))
 	r.GET("/api/identity/roles", lib.ChainMiddlewares(h.listRoles, middlewares...))
 	r.POST("/api/identity/roles", lib.ChainMiddlewares(h.createRole, middlewares...))
@@ -66,6 +71,9 @@ type identityUserPayload struct {
 	Source   string   `json:"source"`
 	IsActive *bool    `json:"is_active"`
 	RoleIDs  []string `json:"role_ids"`
+	// TemporaryPassword is accepted only by the Keycloak provisioning endpoint.
+	// It is never written to the local user record or included in responses.
+	TemporaryPassword string `json:"temporary_password"`
 }
 
 type identityUserResponse struct {
@@ -77,6 +85,9 @@ type identityUserResponse struct {
 	Source   string   `json:"source"`
 	IsActive bool     `json:"is_active"`
 	RoleIDs  []string `json:"role_ids"`
+	// VirtualKeyID names the single personal Virtual Key assigned to the user.
+	// It is nil when the user has no individual credential.
+	VirtualKeyID *string `json:"virtual_key_id"`
 }
 
 type identityRolePayload struct {
@@ -131,6 +142,81 @@ func (h *IdentityHandler) createUser(ctx *fasthttp.RequestCtx) {
 	}
 	if err := h.store.UpsertIdentityUser(ctx, &user); err != nil {
 		SendError(ctx, fasthttp.StatusConflict, "failed to create user")
+		return
+	}
+	if err := h.store.ReplaceIdentityUserRoles(ctx, user.ID, roleIDs); err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to assign user roles")
+		return
+	}
+	SendJSONWithStatus(ctx, h.userResponses(ctx, []tables.TableIdentityUser{user})[0], fasthttp.StatusCreated)
+}
+
+func (h *IdentityHandler) provisionKeycloakUser(ctx *fasthttp.RequestCtx) {
+	if !h.requireStore(ctx) {
+		return
+	}
+	if h.keycloak == nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "Keycloak provisioning is not configured")
+		return
+	}
+	var payload identityUserPayload
+	if err := sonic.Unmarshal(ctx.PostBody(), &payload); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
+		return
+	}
+	if len(payload.TemporaryPassword) < 12 {
+		SendError(ctx, fasthttp.StatusBadRequest, "temporary password must contain at least 12 characters")
+		return
+	}
+	// Decode the ordinary user shape before sending it upstream, but force the
+	// Keycloak source and remove the password-bearing field from local state.
+	payload.Source = "keycloak"
+	body, err := sonic.Marshal(payload)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
+		return
+	}
+	user, roleIDs, err := decodeIdentityUser(body, "", false)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, err.Error())
+		return
+	}
+	roles, err := h.store.ListIdentityRoles(ctx)
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to load roles")
+		return
+	}
+	externalRoles := make([]string, 0, len(roleIDs))
+	rolesByID := make(map[string]tables.TableIdentityRole, len(roles))
+	for _, role := range roles {
+		rolesByID[role.ID] = role
+	}
+	for _, roleID := range roleIDs {
+		role, found := rolesByID[roleID]
+		if !found {
+			SendError(ctx, fasthttp.StatusBadRequest, "one or more roles do not exist")
+			return
+		}
+		externalRoles = append(externalRoles, role.ExternalRole)
+	}
+	created, err := h.keycloak.provisionUser(ctx, user, payload.TemporaryPassword, externalRoles)
+	if err != nil {
+		logger.Warn("Keycloak user provisioning failed: %v", err)
+		SendError(ctx, fasthttp.StatusConflict, "failed to create user in Keycloak")
+		return
+	}
+	user.ID = uuid.NewString()
+	user.Subject = created.ID
+	user.Source = "keycloak"
+	user.ClaimsJSON = `{}`
+	if err := h.store.UpsertIdentityUser(ctx, &user); err != nil {
+		// Do not leave a provisioned identity without a corresponding Bifrost
+		// directory entry. Best-effort compensation avoids a misleading success.
+		token, tokenErr := h.keycloak.accessToken(ctx)
+		if tokenErr == nil {
+			_ = h.keycloak.deleteUser(ctx, token, created.ID)
+		}
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to save provisioned user")
 		return
 	}
 	if err := h.store.ReplaceIdentityUserRoles(ctx, user.ID, roleIDs); err != nil {
@@ -210,6 +296,48 @@ func (h *IdentityHandler) replaceUserRoles(ctx *fasthttp.RequestCtx) {
 		return
 	}
 	ctx.SetStatusCode(fasthttp.StatusNoContent)
+}
+
+func (h *IdentityHandler) replaceUserVirtualKey(ctx *fasthttp.RequestCtx) {
+	if !h.requireStore(ctx) {
+		return
+	}
+	if h.assignments == nil {
+		SendError(ctx, fasthttp.StatusServiceUnavailable, "virtual key assignments are unavailable")
+		return
+	}
+	var payload struct {
+		VirtualKeyID *string `json:"virtual_key_id"`
+	}
+	if err := sonic.Unmarshal(ctx.PostBody(), &payload); err != nil {
+		SendError(ctx, fasthttp.StatusBadRequest, "invalid request payload")
+		return
+	}
+	if payload.VirtualKeyID != nil {
+		value := strings.TrimSpace(*payload.VirtualKeyID)
+		if value == "" {
+			payload.VirtualKeyID = nil
+		} else {
+			payload.VirtualKeyID = &value
+		}
+	}
+	if err := h.assignments.ReplaceIdentityVirtualKeyAssignment(ctx, routeIdentityID(ctx), payload.VirtualKeyID); err != nil {
+		switch err {
+		case configstore.ErrNotFound:
+			SendError(ctx, fasthttp.StatusNotFound, "user or virtual key was not found")
+		case configstore.ErrAlreadyExists:
+			SendError(ctx, fasthttp.StatusConflict, "virtual key is already assigned to another user")
+		default:
+			SendError(ctx, fasthttp.StatusInternalServerError, "failed to assign virtual key")
+		}
+		return
+	}
+	user, err := h.store.GetIdentityUser(ctx, routeIdentityID(ctx))
+	if err != nil {
+		SendError(ctx, fasthttp.StatusInternalServerError, "failed to load user")
+		return
+	}
+	SendJSON(ctx, h.userResponses(ctx, []tables.TableIdentityUser{*user})[0])
 }
 
 func (h *IdentityHandler) listRoles(ctx *fasthttp.RequestCtx) {
@@ -315,7 +443,15 @@ func (h *IdentityHandler) userResponses(ctx context.Context, users []tables.Tabl
 	result := make([]identityUserResponse, 0, len(users))
 	for _, user := range users {
 		roleIDs, _ := h.store.ListIdentityRoleIDs(ctx, user.ID)
-		result = append(result, identityUserResponse{ID: user.ID, Subject: user.Subject, Username: user.Username, Email: user.Email, Name: user.Name, Source: user.Source, IsActive: user.IsActive, RoleIDs: roleIDs})
+		var virtualKeyID *string
+		if h.assignments != nil {
+			assignment, err := h.assignments.GetIdentityVirtualKeyAssignment(ctx, user.ID)
+			if err == nil {
+				value := assignment.VirtualKeyID
+				virtualKeyID = &value
+			}
+		}
+		result = append(result, identityUserResponse{ID: user.ID, Subject: user.Subject, Username: user.Username, Email: user.Email, Name: user.Name, Source: user.Source, IsActive: user.IsActive, RoleIDs: roleIDs, VirtualKeyID: virtualKeyID})
 	}
 	return result
 }

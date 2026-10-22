@@ -2,15 +2,61 @@ package handlers
 
 import (
 	"context"
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"testing"
 
 	"github.com/maximhq/bifrost/framework/configstore"
+	"github.com/maximhq/bifrost/framework/configstore/tables"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestKeycloakSyncerProvisionsTemporaryPasswordAndRealmRole(t *testing.T) {
+	var createdPayload struct {
+		Username    string `json:"username"`
+		Credentials []struct {
+			Temporary bool `json:"temporary"`
+		} `json:"credentials"`
+		RequiredActions []string `json:"requiredActions"`
+	}
+	roleAssigned := false
+	var server *httptest.Server
+	server = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/realms/bifrost-local/protocol/openid-connect/token":
+			_, _ = w.Write([]byte(`{"access_token":"test-token"}`))
+		case "/admin/realms/bifrost-local/users":
+			require.Equal(t, http.MethodPost, r.Method)
+			require.NoError(t, json.NewDecoder(r.Body).Decode(&createdPayload))
+			w.Header().Set("Location", server.URL+"/admin/realms/bifrost-local/users/kc-user-2")
+			w.WriteHeader(http.StatusCreated)
+		case "/admin/realms/bifrost-local/roles/bifrost-developer":
+			_, _ = w.Write([]byte(`{"id":"role-1","name":"bifrost-developer"}`))
+		case "/admin/realms/bifrost-local/users/kc-user-2/role-mappings/realm":
+			require.Equal(t, http.MethodPost, r.Method)
+			roleAssigned = true
+			w.WriteHeader(http.StatusNoContent)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+	issuer, err := url.Parse(server.URL + "/realms/bifrost-local")
+	require.NoError(t, err)
+	syncer := &keycloakSyncer{issuer: issuer, realm: "bifrost-local", clientID: "bifrost-oidc", clientSecret: "secret", httpClient: server.Client()}
+
+	created, err := syncer.provisionUser(context.Background(), tables.TableIdentityUser{Username: "grace", Email: "grace@example.test", Name: "Grace Hopper", IsActive: true}, "a-temporary-password", []string{"bifrost-developer"})
+	require.NoError(t, err)
+	assert.Equal(t, "kc-user-2", created.ID)
+	assert.Equal(t, "grace", createdPayload.Username)
+	require.Len(t, createdPayload.Credentials, 1)
+	assert.True(t, createdPayload.Credentials[0].Temporary)
+	assert.Equal(t, []string{"UPDATE_PASSWORD"}, createdPayload.RequiredActions)
+	assert.True(t, roleAssigned)
+}
 
 func TestKeycloakSyncerSyncsUsersAndMappedRoles(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

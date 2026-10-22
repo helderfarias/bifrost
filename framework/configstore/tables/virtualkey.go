@@ -293,9 +293,9 @@ type TableVirtualKey struct {
 	IsAccessProfileManaged bool `gorm:"-" json:"is_access_profile_managed,omitempty"`
 
 	// AssignedUser is the user this key is assigned to, when any. Like
-	// IsAccessProfileManaged it is read-only and never persisted: the VK-user link
-	// lives in an enterprise table, so it is filled in on the governance read paths
-	// by a downstream resolver and stays nil in OSS. No omitempty - "no assignee" has
+	// IsAccessProfileManaged it is read-only and never persisted on this row: the
+	// relationship lives in a dedicated identity assignment table and is filled in
+	// by the governance read paths. No omitempty - "no assignee" has
 	// to reach the UI as an explicit null. Absence carries the other half of the
 	// meaning, "not resolved", and is produced by MarshalJSON off AssigneeResolved
 	// rather than by a struct tag, which cannot tell the two nils apart.
