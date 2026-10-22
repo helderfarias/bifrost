@@ -2977,6 +2977,7 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	providerHandler.RegisterRoutes(s.Router, middlewares...)
 	handlers.NewAPIGatewayRoutesHandler(apiGatewayStore, s.APIGatewayHandler).RegisterRoutes(s.Router, middlewares...)
 	// Identity management is optional, preserving compatibility with config stores that do not implement it.
+	// When available, its routes participate in the same dashboard middleware chain as the other admin APIs.
 	handlers.NewIdentityHandler(identityStore).RegisterRoutes(s.Router, middlewares...)
 	if identityStore != nil {
 		syncCtx, cancel := context.WithTimeout(ctx, 10*time.Second)

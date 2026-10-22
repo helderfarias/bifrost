@@ -1,6 +1,5 @@
 import {
 	ArrowUpRight,
-	BadgeCheck,
 	BadgeInfo,
 	BookOpenText,
 	BookUser,
@@ -12,24 +11,17 @@ import {
 	ChartColumnBig,
 	ChevronsLeftRightEllipsis,
 	CircuitBoard,
-	Database,
 	Construction,
 	DatabaseZap,
 	Flag,
-	FolderGit,
 	SquareKanban,
-	Gavel,
 	GitCompareArrows,
 	Globe,
-	Hexagon,
-	History,
 	House,
 	KeyRound,
 	Landmark,
-	LaptopMinimalCheck,
 	LayoutGrid,
 	Logs,
-	Megaphone,
 	Network,
 	Palette,
 	PanelLeftClose,
@@ -44,7 +36,6 @@ import {
 	Settings2Icon,
 	ShieldCheck,
 	Shuffle,
-	Siren,
 	SlidersHorizontal,
 	Telescope,
 	ToolCase,
@@ -583,9 +574,6 @@ export default function AppSidebar() {
 	});
 	const hasLogsAccess = useRbac(RbacResource.Logs, RbacOperation.View);
 	const hasObservabilityAccess = useRbac(RbacResource.Observability, RbacOperation.View);
-	// Alerting is currently surfaced under the existing governance permission
-	// until enterprise alerting gets its own RBAC resource.
-	const hasAlertingAccess = useRbac(RbacResource.Governance, RbacOperation.View);
 	const hasDashboardAccess = useRbac(RbacResource.Dashboard, RbacOperation.View);
 	const hasModelProvidersAccess = useRbac(RbacResource.ModelProvider, RbacOperation.View);
 	const hasMCPGatewayAccess = useRbac(RbacResource.MCPGateway, RbacOperation.View);
@@ -607,19 +595,13 @@ export default function AppSidebar() {
 	const hasGuardrailsProvidersAccess = useRbac(RbacResource.GuardrailsProviders, RbacOperation.View);
 	const hasGuardrailsConfigAccess = useRbac(RbacResource.GuardrailsConfig, RbacOperation.View);
 	const hasCircuitBreakerAccess = useRbac(RbacResource.CircuitBreaker, RbacOperation.View);
-	const hasClusterConfigAccess = useRbac(RbacResource.Cluster, RbacOperation.View);
 	const isAdaptiveRoutingAllowed = useRbac(RbacResource.AdaptiveRouter, RbacOperation.View);
 	const hasSettingsAccess = useRbac(RbacResource.Settings, RbacOperation.View);
 	const hasFeatureFlagsAccess = useRbac(RbacResource.FeatureFlags, RbacOperation.View);
 	const isWarpEnabled = useFeatureFlag(FEATURE_FLAGS.warp);
 	const hasWarpAccess = useRbac(RbacResource.Warp, RbacOperation.View);
 	const hasAPIKeyAccess = useRbac(RbacResource.APIKeys, RbacOperation.View);
-	const hasPromptRepositoryAccess = useRbac(RbacResource.PromptRepository, RbacOperation.View);
 	const hasSkillsRepositoryAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.View);
-	const hasDevicesAccess = useRbac(RbacResource.Devices, RbacOperation.View);
-	const hasInventoryAccess = useRbac(RbacResource.Inventory, RbacOperation.View);
-	const hasEdgeConfigAccess = useRbac(RbacResource.EdgeConfig, RbacOperation.View);
-	const hasAnyEdgeControlAccess = hasDevicesAccess || hasInventoryAccess || hasEdgeConfigAccess;
 	const hasAccessProfilesAccess = useRbac(RbacResource.AccessProfiles, RbacOperation.View);
 	const hasProjectsAccess = useRbac(RbacResource.Projects, RbacOperation.View);
 	const hasAnyGovernanceAccess =
@@ -893,36 +875,6 @@ export default function AppSidebar() {
 				hasAccess: hasPluginsAccess,
 			},
 			{
-				title: "Alerting",
-				url: "/workspace/alerting",
-				icon: Siren,
-				description: "Manage alert channels, rules, and history",
-				hasAccess: hasAlertingAccess,
-				subItems: [
-					{
-						title: "Channels",
-						url: "/workspace/alerting/channels",
-						icon: Megaphone,
-						description: "Configure notification channels",
-						hasAccess: hasAlertingAccess,
-					},
-					{
-						title: "Rules",
-						url: "/workspace/alerting/rules",
-						icon: Gavel,
-						description: "Define alerting rules",
-						hasAccess: hasAlertingAccess,
-					},
-					{
-						title: "History",
-						url: "/workspace/alerting/history",
-						icon: History,
-						description: "Review alert delivery history",
-						hasAccess: hasAlertingAccess,
-					},
-				],
-			},
-			{
 				title: "Governance",
 				url: "/workspace/governance",
 				icon: Landmark,
@@ -1048,74 +1000,6 @@ export default function AppSidebar() {
 				hasAccess: hasGovernanceLegacyAccess,
 			},
 			{
-				title: "Edge Control",
-				icon: Hexagon,
-				description: "Edge device management",
-				url: "/workspace/edge-control",
-				hasAccess: hasAnyEdgeControlAccess,
-				subItems: [
-					{
-						title: "Devices",
-						url: "/workspace/edge-control/devices",
-						icon: LaptopMinimalCheck,
-						description: "Manage edge devices",
-						hasAccess: hasDevicesAccess,
-					},
-					{
-						title: "Approvals",
-						url: "/workspace/edge-control/inventory",
-						icon: BadgeCheck,
-						description: "Approve apps and MCP servers",
-						hasAccess: hasInventoryAccess,
-					},
-					{
-						title: "Edge Settings",
-						url: "/workspace/edge-control/config",
-						icon: Settings,
-						description: "Edge settings",
-						hasAccess: hasEdgeConfigAccess,
-					},
-				],
-			},
-			{
-				title: "Cluster",
-				url: "/workspace/cluster",
-				icon: Network,
-				description: "Monitor the Bifrost cluster",
-				hasAccess: hasClusterConfigAccess,
-				subItems: [
-					{
-						title: "Nodes",
-						url: "/workspace/cluster/overview",
-						icon: Server,
-						description: "Node health, CPU, memory and request rate",
-						hasAccess: hasClusterConfigAccess,
-					},
-					{
-						title: "Storage",
-						url: "/workspace/cluster/storage",
-						icon: Database,
-						description: "Config and logs store databases, pools and slow queries",
-						hasAccess: hasClusterConfigAccess,
-					},
-					{
-						title: "Incidents",
-						url: "/workspace/cluster/incidents",
-						icon: TriangleAlert,
-						description: "Memory, message delivery and database incidents",
-						hasAccess: hasClusterConfigAccess,
-					},
-					{
-						title: "Settings",
-						url: "/workspace/cluster/settings",
-						icon: Settings2Icon,
-						description: "Monitoring, sample retention and memory threshold",
-						// The settings API sits under the Settings resource; saving also needs Settings update.
-						hasAccess: hasClusterConfigAccess && hasSettingsAccess,
-					},
-				],
-			},
-			{
 				title: "Adaptive Routing",
 				url: "/workspace/adaptive-routing",
 				icon: Shuffle,
@@ -1147,13 +1031,6 @@ export default function AppSidebar() {
 			},
 			...(isDbConnected
 				? [
-						{
-							title: "Prompt Repository",
-							url: "/workspace/prompt-repo",
-							icon: FolderGit,
-							description: "Prompt repository",
-							hasAccess: hasPromptRepositoryAccess,
-						},
 						{
 							title: "Skills",
 							url: "/workspace/skills-repo",
@@ -1278,7 +1155,6 @@ export default function AppSidebar() {
 			hasLogsAccess,
 			hasAPIKeyAccess,
 			hasObservabilityAccess,
-			hasAlertingAccess,
 			hasDashboardAccess,
 			hasModelProvidersAccess,
 			hasMCPGatewayAccess,
@@ -1301,20 +1177,14 @@ export default function AppSidebar() {
 			hasGuardrailsProvidersAccess,
 			hasGuardrailsConfigAccess,
 			hasCircuitBreakerAccess,
-			hasClusterConfigAccess,
 			isAdaptiveRoutingAllowed,
 			hasSettingsAccess,
-			hasPromptRepositoryAccess,
 			hasSkillsRepositoryAccess,
 			hasAccessProfilesAccess,
 			hasProjectsAccess,
 			hasFeatureFlagsAccess,
 			isWarpEnabled,
 			hasWarpAccess,
-			hasDevicesAccess,
-			hasInventoryAccess,
-			hasEdgeConfigAccess,
-			hasAnyEdgeControlAccess,
 			isDbConnected,
 		],
 	);
