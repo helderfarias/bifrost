@@ -265,6 +265,7 @@ type BifrostHTTPServer struct {
 	NotificationService  *handlers.NotificationService
 	RSSFeedsHandler      *handlers.RSSFeedsHandler
 	WarpHandler          *handlers.WarpHandler
+	APIGatewayHandler    *handlers.APIGatewayHandler
 	MCPServerHandler     *handlers.MCPServerHandler
 	AgentGatewayHandler  *handlers.AgentGatewayHandler
 	devPprofHandler      *handlers.DevPprofHandler
@@ -2966,12 +2967,14 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	oauth2ConsentHandler := handlers.NewOAuth2ConsentHandler(s.Config, s.TempTokens, s.OAuth2IdentityResolver)
 
 	oauth2DiscoveryHandler.RegisterRoutes(s.Router, middlewares...)
+	apiGatewayStore, _ := s.Config.ConfigStore.(configstore.APIGatewayRouteStore)
 	// No middleware needed for mcp issuance routes, they should be open
 	oauth2IssuanceHandler.RegisterRoutes(s.Router)
 	oauth2SessionsHandler.RegisterRoutes(s.Router, middlewares...)
 	oauth2ConsentHandler.RegisterRoutes(s.Router, middlewares...)
 	healthHandler.RegisterRoutes(s.Router, middlewares...)
 	providerHandler.RegisterRoutes(s.Router, middlewares...)
+	handlers.NewAPIGatewayRoutesHandler(apiGatewayStore, s.APIGatewayHandler).RegisterRoutes(s.Router, middlewares...)
 	mcpHandler.RegisterRoutes(s.Router, middlewares...)
 	if virtualMCPHandler != nil {
 		virtualMCPHandler.RegisterRoutes(s.Router, middlewares...)
@@ -3318,6 +3321,25 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 	// Load all plugins
 	if err := s.LoadPlugins(ctx); err != nil {
 		return fmt.Errorf("failed to instantiate plugins: %v", err)
+	}
+	apiGatewayStore, _ := s.Config.ConfigStore.(configstore.APIGatewayRouteStore)
+	var resolveGatewayVirtualKey handlers.APIGatewayVirtualKeyResolver
+	if governancePlugin, governanceErr := s.getGovernancePlugin(); governanceErr == nil && governancePlugin != nil {
+		governanceStore := governancePlugin.GetGovernanceStore()
+		resolveGatewayVirtualKey = func(value string) (string, bool) {
+			if value == "" {
+				return "", false
+			}
+			virtualKey, ok := governanceStore.GetVirtualKey(context.Background(), value)
+			if !ok || virtualKey == nil || !virtualKey.IsActiveValue() || virtualKey.IsExpiredAt(time.Now()) {
+				return "", false
+			}
+			return virtualKey.ID, true
+		}
+	}
+	s.APIGatewayHandler, err = handlers.NewAPIGatewayHandler(apiGatewayStore, s.HTTPClientFactory, resolveGatewayVirtualKey)
+	if err != nil {
+		return fmt.Errorf("failed to initialize api gateway: %w", err)
 	}
 
 	// Initialize the webhook delivery dispatcher (requires both stores; the
@@ -3671,9 +3693,10 @@ func (s *BifrostHTTPServer) Bootstrap(ctx context.Context) error {
 	logger.Debug("server read buffer size: %d", s.Config.ServerConfig.ReadBufferSize)
 	maxRequestBodySizeMB := s.Config.ClientConfig.MaxRequestBodySizeMB
 	lib.ApplyBodyBufferPoolLimit(s.Config.ServerConfig, maxRequestBodySizeMB*1024*1024)
+	routerHandler := s.APIGatewayHandler.Wrap(s.Router.Handler)
 	// Create fasthttp server instance
 	s.Server = &fasthttp.Server{
-		Handler:            handlers.ServerRootHandler(s.CORSMiddleware, s.Config, s.Router.Handler),
+		Handler:            handlers.ServerRootHandler(s.CORSMiddleware, s.Config, routerHandler),
 		MaxRequestBodySize: maxRequestBodySizeMB * 1024 * 1024,
 		ReadBufferSize:     s.Config.ServerConfig.ReadBufferSize,
 		// Explain an oversized body (413 naming the configured limit) instead of fasthttp's generic 400.

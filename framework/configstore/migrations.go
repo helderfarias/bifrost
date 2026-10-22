@@ -570,6 +570,8 @@ var configstoreMigrationSteps = []migrationStep{
 	{IDs: []string{"add_vertex_use_session_routing_column"}, run: migrationAddVertexUseSessionRoutingColumn},
 	{IDs: []string{"add_rss_feeds_table"}, run: migrationAddRSSFeedsTable},
 	{IDs: []string{"add_rss_feeds_icon_url_column"}, run: migrationAddRSSFeedsIconURLColumn},
+	{IDs: []string{"add_api_gateway_routes_table"}, run: migrationAddAPIGatewayRoutesTable},
+	{IDs: []string{"add_api_gateway_route_virtual_key_ids_column"}, run: migrationAddAPIGatewayRouteVirtualKeyIDsColumn},
 }
 
 // warpLogEmbeddingColumns are the semantic-search configuration columns added
@@ -1123,6 +1125,36 @@ func migrationAddRSSFeedsTable(ctx context.Context, db *gorm.DB, logger schemas.
 	logger.Info("[configstore] starting migration %s", migrationName)
 	defer logger.Info("[configstore] finished migration %s", migrationName)
 	return RunSingleMigration(ctx, nil, db, logger, rssFeedsTableMigration(ctx, migrationName))
+}
+
+func migrationAddAPIGatewayRoutesTable(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	const migrationName = "add_api_gateway_routes_table"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	return RunSingleMigration(ctx, nil, db, logger, &migrator.Migration{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return tx.WithContext(ctx).AutoMigrate(&tables.TableAPIGatewayRoute{})
+		},
+		Rollback: func(*gorm.DB) error {
+			return fmt.Errorf("%s is non-rollbackable: dropping api gateway routes would delete configured upstream APIs", migrationName)
+		},
+	})
+}
+
+func migrationAddAPIGatewayRouteVirtualKeyIDsColumn(ctx context.Context, db *gorm.DB, logger schemas.Logger) error {
+	const migrationName = "add_api_gateway_route_virtual_key_ids_column"
+	logger.Info("[configstore] starting migration %s", migrationName)
+	defer logger.Info("[configstore] finished migration %s", migrationName)
+	return RunSingleMigration(ctx, nil, db, logger, &migrator.Migration{
+		ID: migrationName,
+		Migrate: func(tx *gorm.DB) error {
+			return addColumnIfNotExists(tx.WithContext(ctx), logger, &tables.TableAPIGatewayRoute{}, "VirtualKeyIDsJSON")
+		},
+		Rollback: func(*gorm.DB) error {
+			return fmt.Errorf("%s is non-rollbackable: removing virtual-key access rules could expose configured APIs", migrationName)
+		},
+	})
 }
 
 func rssFeedsTableMigration(ctx context.Context, migrationName string) *migrator.Migration {

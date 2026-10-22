@@ -4,6 +4,7 @@ export { baseApi, clearAuthStorage, getErrorCode, getErrorMessage, setAuthToken 
 // API slices and hooks
 export * from "./agentLogsApi";
 export * from "./agentsApi";
+export * from "./apiGatewayApi";
 export * from "./brandingApi";
 export * from "./configApi";
 export * from "./featureFlagsApi";

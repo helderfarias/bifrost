@@ -795,6 +795,13 @@ export default function AppSidebar() {
 				],
 			},
 			{
+				title: "API Gateway",
+				url: "/workspace/api-gateway",
+				icon: Network,
+				description: "Proxy and rewrite HTTP APIs",
+				hasAccess: true,
+			},
+			{
 				title: "MCP Servers",
 				testId: "mcp-gateway", // keep the pre-rename E2E selector stable
 				icon: MCPIcon,
