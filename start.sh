@@ -1,5 +1,8 @@
 #!/bin/bash
 
+export BIFROST_USER=admin@bifrost.local
+export BIFROST_PASSWORD=bifrost-local-admin
+
 export BIFROST_KEYCLOAK_ISSUER=http://localhost:8081/realms/bifrost-local
 export BIFROST_KEYCLOAK_CLIENT_ID=bifrost-oidc
 export BIFROST_KEYCLOAK_CLIENT_SECRET=bifrost-local-secret-change-me
