@@ -17,6 +17,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/routing"
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
+	"github.com/maximhq/bifrost/transports/v2/bifrost-http/circuitbreaker"
 	"github.com/maximhq/bifrost/transports/v2/bifrost-http/handlers"
 	"github.com/maximhq/bifrost/transports/v2/bifrost-http/lib"
 )
@@ -186,6 +187,13 @@ func loadBuiltinPlugin(ctx context.Context, name string, pluginConfig any, bifro
 		}
 		return compat.Init(*compatConfig, logger, bifrostConfig.ModelCatalog)
 
+	case circuitbreaker.PluginName:
+		circuitBreakerConfig, err := MarshalPluginConfig[circuitbreaker.Config](pluginConfig)
+		if err != nil {
+			return nil, fmt.Errorf("failed to marshal circuit breaker plugin config: %w", err)
+		}
+		return circuitbreaker.Init(circuitBreakerConfig)
+
 	case modelcatalogresolver.PluginName:
 		return modelcatalogresolver.Init(bifrostConfig.ModelCatalog, logger)
 
@@ -333,7 +341,17 @@ func (s *BifrostHTTPServer) loadBuiltinPlugins(ctx context.Context) error {
 	s.registerPluginWithStatus(ctx, compat.PluginName, nil, compatCfg, false)
 	s.Config.SetPluginOrderInfo(compat.PluginName, builtinPlacement, schemas.Ptr(8))
 
-	// 9. Maxim (if configured in PluginConfigs)
+	// 9. Circuit breaker is opt-in. It is placed after routing so it sees the
+	// final primary provider/model selected for the request.
+	circuitBreakerConfig := s.getPluginConfig(circuitbreaker.PluginName)
+	if circuitBreakerConfig != nil && circuitBreakerConfig.Enabled {
+		s.registerPluginWithStatus(ctx, circuitbreaker.PluginName, nil, circuitBreakerConfig.Config, false)
+	} else {
+		s.markPluginDisabled(circuitbreaker.PluginName)
+	}
+	s.Config.SetPluginOrderInfo(circuitbreaker.PluginName, builtinPlacement, schemas.Ptr(9))
+
+	// 10. Maxim (if configured in PluginConfigs)
 	maximConfig := s.getPluginConfig(maxim.PluginName)
 	if maximConfig != nil && maximConfig.Enabled {
 		s.registerPluginWithStatus(ctx, maxim.PluginName, nil, maximConfig.Config, false)

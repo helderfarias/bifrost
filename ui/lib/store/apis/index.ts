@@ -7,6 +7,7 @@ export * from "./agentsApi";
 export * from "./apiGatewayApi";
 export * from "./auditLogsApi";
 export * from "./brandingApi";
+export * from "./circuitBreakerApi";
 export * from "./configApi";
 export * from "./featureFlagsApi";
 export * from "./identityApi";

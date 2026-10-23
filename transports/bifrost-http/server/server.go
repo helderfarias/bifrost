@@ -42,6 +42,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/routing/complexity"
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
+	"github.com/maximhq/bifrost/transports/v2/bifrost-http/circuitbreaker"
 	"github.com/maximhq/bifrost/transports/v2/bifrost-http/handlers"
 	"github.com/maximhq/bifrost/transports/v2/bifrost-http/integrations"
 	"github.com/maximhq/bifrost/transports/v2/bifrost-http/lib"
@@ -2959,6 +2960,13 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	mcpSessionsHandler := handlers.NewMCPSessionsHandler(s.Config, callbacks)
 	configHandler := handlers.NewConfigHandler(callbacks, s.Config)
 	pluginsHandler := handlers.NewPluginsHandler(callbacks, s.Config.ConfigStore)
+	circuitBreakerHandler := handlers.NewCircuitBreakerHandler(s.Config.ConfigStore, callbacks, func() *circuitbreaker.Plugin {
+		plugin, err := lib.FindPluginAs[*circuitbreaker.Plugin](s.Config, circuitbreaker.PluginName)
+		if err != nil {
+			return nil
+		}
+		return plugin
+	})
 	sessionHandler := handlers.NewSessionHandler(s.Config.ConfigStore, s.WSTicketStore)
 	if s.setupLockInstalled && s.AuthMiddleware != nil {
 		sessionHandler.SetSetupLock(s.AuthMiddleware)
@@ -3010,6 +3018,7 @@ func (s *BifrostHTTPServer) RegisterAPIRoutes(ctx context.Context, callbacks Ser
 	if pluginsHandler != nil {
 		pluginsHandler.RegisterRoutes(s.Router, middlewares...)
 	}
+	circuitBreakerHandler.RegisterRoutes(s.Router, middlewares...)
 	if sessionHandler != nil {
 		sessionHandler.RegisterRoutes(s.Router, middlewares...)
 	}

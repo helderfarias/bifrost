@@ -57,6 +57,7 @@ import (
 	"github.com/maximhq/bifrost/plugins/routing/rules"
 	"github.com/maximhq/bifrost/plugins/semanticcache"
 	"github.com/maximhq/bifrost/plugins/telemetry"
+	"github.com/maximhq/bifrost/transports/v2/bifrost-http/circuitbreaker"
 	"gorm.io/gorm"
 )
 
@@ -141,6 +142,7 @@ var builtinPluginNames = []string{
 	otel.PluginName,
 	semanticcache.PluginName,
 	compat.PluginName,
+	circuitbreaker.PluginName,
 	maxim.PluginName,
 	routing.PluginName,
 }
