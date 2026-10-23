@@ -2,19 +2,16 @@ import {
 	ArrowUpRight,
 	BadgeInfo,
 	BookOpenText,
-	BookUser,
 	Bot,
 	Boxes,
 	BoxIcon,
 	Building,
-	Building2,
 	ChartColumnBig,
 	ChevronsLeftRightEllipsis,
 	CircuitBoard,
 	Construction,
 	DatabaseZap,
 	Flag,
-	SquareKanban,
 	GitCompareArrows,
 	Globe,
 	House,
@@ -587,7 +584,6 @@ export default function AppSidebar() {
 	const hasAuditLogsAccess = useRbac(RbacResource.AuditLogs, RbacOperation.View);
 	const hasCustomersAccess = useRbac(RbacResource.Customers, RbacOperation.View);
 	const hasTeamsAccess = useRbac(RbacResource.Teams, RbacOperation.View);
-	const hasBusinessUnitsAccess = useRbac(RbacResource.BusinessUnits, RbacOperation.View);
 	const hasRbacAccess = useRbac(RbacResource.RBAC, RbacOperation.View);
 	const hasVirtualKeysAccess = useRbac(RbacResource.VirtualKeys, RbacOperation.View);
 	const hasGovernanceLegacyAccess = useRbac(RbacResource.Governance, RbacOperation.View);
@@ -602,17 +598,12 @@ export default function AppSidebar() {
 	const hasWarpAccess = useRbac(RbacResource.Warp, RbacOperation.View);
 	const hasAPIKeyAccess = useRbac(RbacResource.APIKeys, RbacOperation.View);
 	const hasSkillsRepositoryAccess = useRbac(RbacResource.SkillsRepository, RbacOperation.View);
-	const hasAccessProfilesAccess = useRbac(RbacResource.AccessProfiles, RbacOperation.View);
-	const hasProjectsAccess = useRbac(RbacResource.Projects, RbacOperation.View);
 	const hasAnyGovernanceAccess =
 		hasVirtualKeysAccess ||
 		hasTeamsAccess ||
 		hasUsersAccess ||
 		hasCustomersAccess ||
-		hasBusinessUnitsAccess ||
 		hasRbacAccess ||
-		hasAccessProfilesAccess ||
-		hasProjectsAccess ||
 		hasGovernanceLegacyAccess;
 	const { data: coreConfig } = useGetCoreConfigQuery({});
 	// OSS setup lock: true while dashboard auth is not configured, so management APIs
@@ -889,15 +880,6 @@ export default function AppSidebar() {
 						hasAccess: hasVirtualKeysAccess,
 					},
 					{
-						title: "Org Chart",
-						url: "/workspace/governance/org-chart",
-						icon: Network,
-						description: "Budgets and usage across business units, teams and users",
-						// The chart is read from business units down, so it follows the Business Units entry.
-						hasAccess: hasBusinessUnitsAccess,
-						new: true,
-					},
-					{
 						title: "Users",
 						url: "/workspace/governance/users",
 						icon: Users,
@@ -912,13 +894,6 @@ export default function AppSidebar() {
 						hasAccess: hasTeamsAccess,
 					},
 					{
-						title: "Business Units",
-						url: "/workspace/governance/business-units",
-						icon: Building2,
-						description: "Manage business units",
-						hasAccess: hasBusinessUnitsAccess,
-					},
-					{
 						title: "Customers",
 						url: "/workspace/governance/customers",
 						icon: WalletCards,
@@ -926,32 +901,11 @@ export default function AppSidebar() {
 						hasAccess: hasCustomersAccess,
 					},
 					{
-						title: "User Provisioning",
-						url: "/workspace/scim",
-						icon: BookUser,
-						description: "User management and provisioning",
-						hasAccess: hasUserProvisioningAccess,
-					},
-					{
 						title: "Roles & Permissions",
 						url: "/workspace/governance/rbac",
 						icon: UserRoundCheck,
 						description: "User roles and permissions",
 						hasAccess: hasRbacAccess,
-					},
-					{
-						title: "Access Profiles",
-						url: "/workspace/governance/access-profiles",
-						icon: ShieldCheck,
-						description: "Manage access profiles for roles",
-						hasAccess: hasAccessProfilesAccess,
-					},
-					{
-						title: "Projects",
-						url: "/workspace/governance/projects",
-						icon: SquareKanban,
-						description: "Scope requests to a project's access and budget",
-						hasAccess: hasProjectsAccess,
 					},
 					{
 						title: "Audit Logs",
@@ -1164,11 +1118,9 @@ export default function AppSidebar() {
 			hasMCPLogsAccess,
 			hasPluginsAccess,
 			hasUsersAccess,
-			hasUserProvisioningAccess,
 			hasAuditLogsAccess,
 			hasCustomersAccess,
 			hasTeamsAccess,
-			hasBusinessUnitsAccess,
 			hasRbacAccess,
 			hasVirtualKeysAccess,
 			hasGovernanceLegacyAccess,
@@ -1180,8 +1132,6 @@ export default function AppSidebar() {
 			isAdaptiveRoutingAllowed,
 			hasSettingsAccess,
 			hasSkillsRepositoryAccess,
-			hasAccessProfilesAccess,
-			hasProjectsAccess,
 			hasFeatureFlagsAccess,
 			isWarpEnabled,
 			hasWarpAccess,

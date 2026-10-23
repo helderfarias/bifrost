@@ -228,9 +228,9 @@ dev: install-ui install-air setup-workspace $(if $(DEBUG),install-delve) ## Star
 	$(ECHO) "$(YELLOW)Starting UI development server...$(NC)"; \
 	$(USE_NODE); if [ -n "$(DISABLE_PROFILER)" ]; then \
 		$(ECHO) "$(CYAN)DevProfiler disabled for testing$(NC)"; \
-		(cd ui && BIFROST_PORT=$(PORT) BIFROST_DISABLE_PROFILER=1 npm run dev) & \
+		(cd ui && BIFROST_PORT=$(PORT) BIFROST_DISABLE_PROFILER=1 npm run dev -- --host 127.0.0.1) & \
 	else \
-		(cd ui && BIFROST_PORT=$(PORT) npm run dev) & \
+		(cd ui && BIFROST_PORT=$(PORT) npm run dev -- --host 127.0.0.1) & \
 	fi; \
 	ui_pid="$$!"; \
 	$(ECHO) "$(YELLOW)[make dev] UI dev server started with pid $$ui_pid$(NC)"; \
